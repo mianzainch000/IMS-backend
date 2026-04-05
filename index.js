@@ -6,6 +6,7 @@ const serverless = require("serverless-http");
 const connectDB = require("./src/config/db");
 const userRoutes = require("./src/routes/userRoutes");
 const productRoutes = require("./src/routes/productRoutes");
+const categorieRoutes = require("./src/routes/categoryRoutes")
 
 
 
@@ -30,6 +31,8 @@ app.use(async (req, res, next) => {
 // --- Routes ---
 app.use("/", userRoutes);
 app.use("/", productRoutes);
+app.use("/", categorieRoutes);
+
 
 
 
