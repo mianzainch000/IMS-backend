@@ -3,30 +3,31 @@ const User = require("../models/userSchema");
 const authorize = (roles = []) => {
     return async (req, res, next) => {
         try {
-            // 1. Database se fresh user data nikaalna zaroori hai
-            const user = await User.findById(req.user._id);
+            const user = await User.findById(req.user._id || req.user.id);
 
             if (!user) {
-                return res.status(404).json({ message: "User not found." });
+                return res.status(401).json({ message: "User not found." });
             }
 
-            // 2. CHECK: Agar admin ne user ko Inactive kar diya hai
+            // 1. REAL LOGOUT TRIGGER: Agar status Inactive hai
             if (user.status === "Inactive") {
                 return res.status(403).json({
+                    logout: true, // Frontend ko batane ke liye
                     message: "Access Denied: Your account is currently Inactive."
                 });
             }
 
-            // 3. CHECK: Role authorization
+            // 2. ROLE RESTRICTION (No Logout): Agar role match nahi karta
             if (roles.length > 0 && !roles.includes(user.role)) {
+                // Yahan hum 403 ki jagah 200 ya 403 with 'logout: false' bhej sakte hain
                 return res.status(403).json({
-                    message: `Access Denied: Your role (${user.role}) is not authorized.`
+                    logout: false, // <--- Yeh flag logout ko rokega
+                    message: `Permission Denied: Admins only.`
                 });
             }
 
-            next(); // Sab theek hai, agay jane do
+            next();
         } catch (error) {
-            console.error("Authorization Error:", error);
             res.status(500).json({ message: "Authorization error occured." });
         }
     };

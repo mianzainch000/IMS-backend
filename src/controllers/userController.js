@@ -170,10 +170,22 @@ exports.resetPassword = async (req, res) => {
 };
 
 // --- GET ALL USERS ---
+// userController.js
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find().select("-password").sort({ createdAt: -1 });
-    res.status(200).json(users);
+    const currentUserRole = req.user.role;
+
+    // 1. Check if Admin: Return full data
+    if (currentUserRole === "Admin") {
+      const users = await User.find().select("-password").sort({ createdAt: -1 });
+      return res.status(200).json(users);
+    }
+
+    // 2. If Editor/Viewer: Return only status of active users (for Dashboard count)
+    // Isse 403 nahi jayega, isliye Logout nahi hoga
+    const activeUsersData = await User.find({ status: "Active" }).select("status");
+    return res.status(200).json(activeUsersData);
+
   } catch (error) {
     res.status(500).json({ message: "Error fetching users" });
   }
@@ -197,6 +209,30 @@ exports.updateUserRole = async (req, res) => {
     res.status(200).json({ message: "Updated successfully!", user: updatedUser });
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// --- ADMIN RESET PASSWORD ---
+exports.adminResetPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 4) {
+      return res.status(400).json({ message: "Password must be at least 4 characters." });
+    }
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Password ko hash karke save karein
+    user.password = await generateHashPassword(newPassword);
+    await user.save();
+
+    return res.status(200).json({ message: `Password for ${user.firstName} updated successfully!` });
+  } catch (error) {
+    console.error("Admin Reset Error:", error);
+    return res.status(500).json({ message: "Server Error" });
   }
 };
 

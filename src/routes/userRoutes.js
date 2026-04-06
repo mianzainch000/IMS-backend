@@ -22,8 +22,16 @@ router.post(
     userController.resetPassword
 );
 
-router.get("/allUsers", authenticate, authorize(["Admin"]), userController.getAllUsers);
-
+// router.js mein Admin ke sath Viewer/Editor bhi add kar dein
+router.get("/allUsers", authenticate, authorize(["Admin", "Editor", "Viewer"]), userController.getAllUsers);
 // 2. Kisi user ka role badalne ke liye (PUT)
 router.put("/updateRole/:id", authenticate, authorize(["Admin"]), userController.updateUserRole);
+
+// Admin power to reset any user's password
+router.put(
+    "/adminResetPassword/:id",
+    authenticate,
+    authorize(["Admin"]),
+    userController.adminResetPassword
+);
 module.exports = router;

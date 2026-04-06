@@ -11,7 +11,7 @@ const authenticate = require("../middleware/authenticate");
 const authorize = require("../middleware/authorize"); // Naya middleware
 
 // 1. Viewer, Editor, aur Admin sab categories DEKH sakte hain
-router.get("/getCategory", authenticate, getCategories);
+router.get("/getCategory", authenticate, authorize(["Admin", "Editor", "Viewer"]), getCategories);
 
 // 2. Sirf Admin aur Editor categories ADD kar sakte hain
 router.post("/addCategory", authenticate, authorize(["Admin", "Editor"]), addCategory);
