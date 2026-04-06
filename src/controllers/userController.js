@@ -3,6 +3,7 @@ const User = require("../models/userSchema");
 const nodemailer = require("nodemailer");
 const ForgetPasswordEmail = require("../emailTemplate");
 const { check, validationResult } = require("express-validator");
+
 const {
   verifyToken,
   generateToken,
@@ -12,45 +13,43 @@ const {
 
 exports.signup = async (req, res) => {
   const errors = validationResult(req);
-
   if (!errors.isEmpty()) {
-    let errorMsg = errors.array()[0].msg;
-    return res.status(400).json({ errors: errorMsg });
+    return res.status(400).json({ errors: errors.array()[0].msg });
   }
 
   try {
     const { firstName, lastName, email, password } = req.body;
 
-    // Check for duplicate email
     let existingUserEmail = await User.findOne({ email });
     if (existingUserEmail) {
-      return res.status(500).json({ message: "Email already in use" });
+      return res.status(400).json({ message: "Email already in use" });
     }
 
-    // Hash the password
+    // --- LOGIC: Check if this is the first user ---
+    const userCount = await User.countDocuments();
+    const assignedRole = (userCount === 0) ? "Admin" : "Viewer";
+    // ----------------------------------------------
+
     const hashedPassword = await generateHashPassword(password);
 
-    // Create new user
     let user = new User({
       firstName,
       lastName,
       email,
       password: hashedPassword,
+      role: assignedRole, // Automatic role assignment
     });
 
-    // Save user to the database
     let result = await user.save();
-
-    // Remove password from the response
     result = result.toObject();
     delete result.password;
 
-    res
-      .status(201)
-      .send({ message: "Account created successfully", user: result });
+    res.status(201).send({
+      message: `Account created as ${assignedRole}`,
+      user: result
+    });
   } catch (error) {
-    console.log(console.error);
-    res.send({ message: "Internal Server Error." });
+    res.status(500).send({ message: "Internal Server Error." });
   }
 };
 
@@ -78,7 +77,10 @@ exports.login = async (req, res) => {
     delete userResponse.password;
 
     const token = generateToken(
-      { _id: userResponse._id },
+      {
+        _id: userResponse._id,
+        role: userResponse.role
+      },
       process.env.SECRET_KEY,
       process.env.JWT_EXPIRATION,
     );
@@ -203,6 +205,48 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
+
+// --- SARE USERS KO GET KARNA (Sirf Admin ke liye) ---
+exports.getAllUsers = async (req, res) => {
+  try {
+    // Saare users dhoondhein lekin password hide kar dein
+    const users = await User.find().select("-password").sort({ createdAt: -1 });
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ message: "Users fetch karne mein masla hua." });
+  }
+};
+
+// --- USER KA ROLE UPDATE KARNA (Viewer -> Editor / Admin) ---
+exports.updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params; // User ID
+    const { role } = req.body; // Naya Role (e.g., "Editor")
+
+    // Role validate karein ke kahin koi ghalat role na bhej de
+    const validRoles = ["Admin", "Editor", "Viewer"];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ message: "Invalid role selected." });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { role: role },
+      { new: true }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User nahi mila." });
+    }
+
+    res.status(200).json({
+      message: `User role updated to ${role} successfully!`,
+      user: updatedUser
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Role update karne mein error aya." });
+  }
+};
 
 exports.validate = (method) => {
   switch (method) {

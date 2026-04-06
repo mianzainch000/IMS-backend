@@ -1,29 +1,26 @@
 const express = require("express");
 const router = express.Router();
-
-// Controllers import karein
 const {
     getCategories,
     addCategory,
     deleteCategory,
-    updateCategory // Agar aapne edit function banaya hai
+    updateCategory
 } = require("../controllers/categoryController");
 
-// Auth middleware (taake sirf logged-in user access kare)
-const authenticate = require("../middleware/authenticate"); // Aapki file
+const authenticate = require("../middleware/authenticate");
+const authorize = require("../middleware/authorize"); // Naya middleware
 
-// --- ALAG ALAG ROUTES ---
-
-// 1. Saari categories fetch karne ke liye
+// 1. Viewer, Editor, aur Admin sab categories DEKH sakte hain
 router.get("/getCategory", authenticate, getCategories);
 
-// 2. Nayi category add karne ke liye
-router.post("/addCategory", authenticate, addCategory);
+// 2. Sirf Admin aur Editor categories ADD kar sakte hain
+router.post("/addCategory", authenticate, authorize(["Admin", "Editor"]), addCategory);
 
-// 3. Category delete karne ke liye (ID ke saath)
-router.delete("/deleteCategory/:id", authenticate, deleteCategory);
+// 3. Sirf Admin aur Editor categories UPDATE kar sakte hain
+router.put("/updateCategory/:id", authenticate, authorize(["Admin", "Editor"]), updateCategory);
 
-// 4. Category update/edit karne ke liye (Optional)
-router.put("/updateCategory/:id", authenticate, updateCategory);
+// 4. SIRF Admin category DELETE kar sakta hai
+// (Category delete karna risky hai kyunki is se products par asar par sakta hai)
+router.delete("/deleteCategory/:id", authenticate, authorize(["Admin"]), deleteCategory);
 
 module.exports = router;
