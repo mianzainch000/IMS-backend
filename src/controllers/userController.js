@@ -11,6 +11,7 @@ const {
   generateHashPassword,
 } = require("../helper/authFunction");
 
+// --- SIGNUP ---
 exports.signup = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -25,10 +26,8 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: "Email already in use" });
     }
 
-    // --- LOGIC: Check if this is the first user ---
     const userCount = await User.countDocuments();
     const assignedRole = (userCount === 0) ? "Admin" : "Viewer";
-    // ----------------------------------------------
 
     const hashedPassword = await generateHashPassword(password);
 
@@ -37,7 +36,8 @@ exports.signup = async (req, res) => {
       lastName,
       email,
       password: hashedPassword,
-      role: assignedRole, // Automatic role assignment
+      role: assignedRole,
+      status: "Active" // Default status
     });
 
     let result = await user.save();
@@ -53,11 +53,11 @@ exports.signup = async (req, res) => {
   }
 };
 
+// --- LOGIN (With Status Check) ---
 exports.login = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    let errorMsg = errors.array()[0].msg;
-    return res.status(400).json({ errors: errorMsg });
+    return res.status(400).json({ errors: errors.array()[0].msg });
   }
 
   try {
@@ -66,6 +66,13 @@ exports.login = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "Invalid email" });
+    }
+
+    // ✅ CHECK: Inactive user login nahi kar sakta
+    if (user.status === "Inactive") {
+      return res.status(403).json({
+        message: "Your account is Inactive. Please contact Admin."
+      });
     }
 
     const isMatch = await comparePassword(password, user.password);
@@ -77,238 +84,144 @@ exports.login = async (req, res) => {
     delete userResponse.password;
 
     const token = generateToken(
-      {
-        _id: userResponse._id,
-        role: userResponse.role
-      },
+      { _id: userResponse._id, role: userResponse.role },
       process.env.SECRET_KEY,
-      process.env.JWT_EXPIRATION,
+      process.env.JWT_EXPIRATION
     );
 
     return res.status(200).send({
       message: "Login successful",
       user: userResponse,
-      token,
-      // ✅ include flag for frontend
+      token
     });
   } catch (error) {
-    console.error("Login Error:", error.message);
     res.status(500).json({ message: "Internal Server Error." });
   }
 };
 
+// --- FORGOT PASSWORD ---
 exports.forgotPassword = async (req, res) => {
   const errors = validationResult(req);
-
   if (!errors.isEmpty()) {
-    let errorMsg = errors.array()[0].msg;
-    return res.status(400).json({ errors: errorMsg });
+    return res.status(400).json({ errors: errors.array()[0].msg });
   }
 
   try {
     const { email } = req.body;
-
-    // Check if the user exists
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).send({ message: "User not found." });
     }
 
-    // Generate JWT token using helper function
     const tokenEmail = generateToken(
       { email },
       process.env.SECRET_KEY,
-      process.env.JWT_EXPIRATION_EMAIL,
+      process.env.JWT_EXPIRATION_EMAIL
     );
 
-    // Prepare email transporter
     const transporter = nodemailer.createTransport({
       service: "gmail",
       secure: true,
       auth: {
-        user: process.env.OWNER_EMAIL, // Use environment variables
+        user: process.env.OWNER_EMAIL,
         pass: process.env.OWNER_PASS,
       },
     });
 
-    // Email content
-    const html = ForgetPasswordEmail.email(
-      process.env.FRONTEND_URL,
-      tokenEmail,
-    );
+    const html = ForgetPasswordEmail.email(process.env.FRONTEND_URL, tokenEmail);
     const emailOptions = {
       from: process.env.OWNER_EMAIL,
       to: email,
-      subject: "Here's your password reset link!",
-      text: "click on Button to Reset ",
+      subject: "Password Reset Link",
       html: html,
     };
 
-    // Send the email
     await transporter.sendMail(emailOptions);
-
-    return res
-      .status(200)
-      .send({ message: "Password reset email sent successfully." });
+    return res.status(200).send({ message: "Reset email sent successfully." });
   } catch (error) {
     return res.status(500).send({ message: "Internal server error." });
   }
 };
 
+// --- RESET PASSWORD ---
 exports.resetPassword = async (req, res) => {
   const errors = validationResult(req);
-
   if (!errors.isEmpty()) {
-    let errorMsg = errors.array()[0].msg;
-    return res.status(400).json({ errors: errorMsg });
+    return res.status(400).json({ errors: errors.array()[0].msg });
   }
 
   try {
     const token = req.params.tokenEmail;
     const { newPassword } = req.body;
 
-    // Validate inputs
-    if (!token || !newPassword) {
-      return res
-        .status(400)
-        .json({ message: "Token and new password are required" });
-    }
-
-    // Verify the token using the helper function
-    let decoded;
-    try {
-      decoded = verifyToken(token, process.env.SECRET_KEY);
-    } catch (err) {
-      return res.status(401).json({ message: err.message });
-    }
-
-    // Extract email from the token
+    let decoded = verifyToken(token, process.env.SECRET_KEY);
     const { email } = decoded;
 
-    // Find user by email
     const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Hash the new password using helper function
-    const hashedPassword = await generateHashPassword(newPassword);
-
-    // Update the user's password
-    user.password = hashedPassword;
+    user.password = await generateHashPassword(newPassword);
     await user.save();
 
     return res.status(200).json({ message: "Password reset successful" });
   } catch (error) {
-    console.error("Error in ResetPassword:", error.message);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
 
-
-// --- SARE USERS KO GET KARNA (Sirf Admin ke liye) ---
+// --- GET ALL USERS ---
 exports.getAllUsers = async (req, res) => {
   try {
-    // Saare users dhoondhein lekin password hide kar dein
     const users = await User.find().select("-password").sort({ createdAt: -1 });
     res.status(200).json(users);
   } catch (error) {
-    res.status(500).json({ message: "Users fetch karne mein masla hua." });
+    res.status(500).json({ message: "Error fetching users" });
   }
 };
 
-// --- USER KA ROLE UPDATE KARNA (Viewer -> Editor / Admin) ---
+// --- UPDATE USER (Role & Status) ---
+// Note: Iska naam 'updateUser' rakha hai taake userRoutes.js se match kare
 exports.updateUserRole = async (req, res) => {
   try {
-    const { id } = req.params; // User ID
-    const { role } = req.body; // Naya Role (e.g., "Editor")
-
-    // Role validate karein ke kahin koi ghalat role na bhej de
-    const validRoles = ["Admin", "Editor", "Viewer"];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ message: "Invalid role selected." });
-    }
+    const { id } = req.params;
+    const { role, status } = req.body;
 
     const updatedUser = await User.findByIdAndUpdate(
       id,
-      { role: role },
+      { role, status },
       { new: true }
     ).select("-password");
 
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User nahi mila." });
-    }
+    if (!updatedUser) return res.status(404).json({ message: "User not found" });
 
-    res.status(200).json({
-      message: `User role updated to ${role} successfully!`,
-      user: updatedUser
-    });
+    res.status(200).json({ message: "Updated successfully!", user: updatedUser });
   } catch (error) {
-    res.status(500).json({ message: "Role update karne mein error aya." });
+    res.status(500).json({ message: "Server Error" });
   }
 };
 
+// --- VALIDATIONS ---
 exports.validate = (method) => {
   switch (method) {
     case "signup": {
       return [
-        check("firstName")
-          .notEmpty()
-          .withMessage("First name is required")
-          .isAlpha()
-          .withMessage("First name must contain only alphabetic characters")
-          .custom((value) => value.trim()),
-        check("lastName")
-          .notEmpty()
-          .withMessage("Last name is required")
-          .isAlpha()
-          .withMessage("Last name must contain only alphabetic characters")
-          .custom((value) => value.trim()),
-        check("email")
-          .notEmpty()
-          .withMessage("Email is required")
-          .isEmail()
-          .withMessage("Please enter a valid email address")
-          .custom((value) => value.trim()),
-        check("password")
-          .notEmpty()
-          .withMessage("Password is required")
-          .isLength({ min: 4 })
-          .withMessage("Password must be at least 4 characters"),
+        check("firstName").notEmpty().withMessage("First name is required"),
+        check("lastName").notEmpty().withMessage("Last name is required"),
+        check("email").isEmail().withMessage("Valid email is required"),
+        check("password").isLength({ min: 4 }).withMessage("Min 4 characters"),
       ];
     }
-
     case "login": {
       return [
-        check("email")
-          .notEmpty()
-          .withMessage("Email is required")
-          .isEmail()
-          .withMessage("Please enter a valid email address")
-          .custom((value) => value.trim()),
+        check("email").isEmail().withMessage("Valid email is required"),
         check("password").notEmpty().withMessage("Password is required"),
       ];
     }
-
     case "forgotPassword": {
-      return [
-        check("email")
-          .notEmpty()
-          .withMessage("Email is required")
-          .isEmail()
-          .withMessage("Please enter a valid email address")
-          .custom((value) => value.trim()),
-      ];
+      return [check("email").isEmail().withMessage("Valid email is required")];
     }
-
     case "resetPassword": {
-      return [
-        check("newPassword")
-          .notEmpty()
-          .withMessage("Password is required")
-          .isLength({ min: 4 })
-          .withMessage("Password must be at least 4 characters"),
-      ];
+      return [check("newPassword").isLength({ min: 4 }).withMessage("Min 4 characters")];
     }
   }
 };
