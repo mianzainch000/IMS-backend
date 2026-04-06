@@ -193,6 +193,7 @@ exports.getAllUsers = async (req, res) => {
 
 // --- UPDATE USER (Role & Status) ---
 // Note: Iska naam 'updateUser' rakha hai taake userRoutes.js se match kare
+// userController.js
 exports.updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
@@ -206,7 +207,11 @@ exports.updateUserRole = async (req, res) => {
 
     if (!updatedUser) return res.status(404).json({ message: "User not found" });
 
-    res.status(200).json({ message: "Updated successfully!", user: updatedUser });
+    // We return the updatedUser object here
+    res.status(200).json({
+      message: "Updated successfully!",
+      user: updatedUser
+    });
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }

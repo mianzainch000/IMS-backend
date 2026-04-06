@@ -12,17 +12,18 @@ const authorize = (roles = []) => {
             // 1. REAL LOGOUT TRIGGER: Agar status Inactive hai
             if (user.status === "Inactive") {
                 return res.status(403).json({
-                    logout: true, // Frontend ko batane ke liye
-                    message: "Access Denied: Your account is currently Inactive."
+                    logout: true,
+                    // Message with User Name
+                    message: `Hi ${user.firstName}, your account is currently Inactive. Please contact Admin.`
                 });
             }
 
             // 2. ROLE RESTRICTION (No Logout): Agar role match nahi karta
             if (roles.length > 0 && !roles.includes(user.role)) {
-                // Yahan hum 403 ki jagah 200 ya 403 with 'logout: false' bhej sakte hain
                 return res.status(403).json({
-                    logout: false, // <--- Yeh flag logout ko rokega
-                    message: `Permission Denied: Admins only.`
+                    logout: false,
+                    // Message with User Name
+                    message: `Access Denied: ${user.firstName}, your current role is "${user.role}". This section is for Admins only.`
                 });
             }
 
