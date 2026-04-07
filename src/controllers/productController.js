@@ -94,3 +94,53 @@ exports.deleteProduct = async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 };
+
+// POS SCANNER: SKU se product dhoondna
+exports.getProductBySku = async (req, res) => {
+    try {
+        const { sku } = req.params;
+        // Hum userId bhi check karenge taake ek user ka scanner dusre ka product na uthaye
+        const product = await Product.findOne({ sku: sku, userId: req.user.id });
+
+        if (!product) {
+            return res.status(404).json({ success: false, message: "Product not found!" });
+        }
+
+        if (product.stock <= 0) {
+            return res.status(400).json({ success: false, message: "Out of stock!" });
+        }
+
+        res.status(200).json({ success: true, data: product });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// CHECKOUT: Stock minus karna
+exports.processSale = async (req, res) => {
+    try {
+        const { items } = req.body; // Array of { _id, quantity }
+
+        // Loop chalakar har product ka stock update karna
+        for (let item of items) {
+            const product = await Product.findOne({ _id: item._id, userId: req.user.id });
+
+            if (product.stock < item.quantity) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Stock kam hai: ${product.name} (Available: ${product.stock})`
+                });
+            }
+
+            // Database mein stock update ($inc with negative value)
+            await Product.findOneAndUpdate(
+                { _id: item._id, userId: req.user.id },
+                { $inc: { stock: -item.quantity } }
+            );
+        }
+
+        res.status(200).json({ success: true, message: "Sale successful! Stock updated." });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};

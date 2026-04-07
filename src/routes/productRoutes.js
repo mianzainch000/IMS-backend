@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const { getProducts, addProduct, updateProduct, deleteProduct } = require("../controllers/productController");
+const { getProducts, addProduct, updateProduct, deleteProduct, getProductBySku, // Naya import
+    processSale } = require("../controllers/productController");
 const authenticate = require("../middleware/authenticate");
 const authorize = require("../middleware/authorize"); // Naya middleware import karein
 
@@ -12,5 +13,9 @@ router.put("/updateProduct/:id", authenticate, authorize(["Admin", "Editor"]), u
 
 // 3. SIRF Admin delete kar sakta hai (Security Layer)
 router.delete("/deleteProduct/:id", authenticate, authorize(["Admin"]), deleteProduct);
+router.get("/scan/:sku", authenticate, authorize([]), getProductBySku);
+
+// Checkout route (Admin/Editor sale kar sakte hain)
+router.post("/checkout", authenticate, authorize(["Admin", "Editor"]), processSale);
 
 module.exports = router;
