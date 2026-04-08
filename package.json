@@ -1,7 +1,10 @@
 {
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "formate": "node script/formate.js",
+    "clean": "node script/clean.js",
+    "reset-git": "powershell -Command \"Remove-Item -Recurse -Force .git; git init; git add .; git commit -m 'Initial commit'; git remote add origin https://github.com/mianzainch000/IMS-backend.git; git branch -M master; git push -u origin master --force\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
