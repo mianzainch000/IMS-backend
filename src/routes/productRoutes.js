@@ -7,6 +7,7 @@ const {
   deleteProduct,
   getProductBySku,
   processSale,
+  getAnalytics,
 } = require("../controllers/productController");
 const authenticate = require("../middleware/authenticate");
 const authorize = require("../middleware/authorize");
@@ -41,4 +42,10 @@ router.post(
   processSale,
 );
 
+router.get(
+  "/analytics",
+  authenticate,
+  authorize(["Admin", "Editor"]), // 2. Access control
+  getAnalytics
+);
 module.exports = router;
