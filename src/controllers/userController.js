@@ -11,7 +11,6 @@ const {
   generateHashPassword,
 } = require("../helper/authFunction");
 
-// --- SIGNUP ---
 exports.signup = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -27,7 +26,7 @@ exports.signup = async (req, res) => {
     }
 
     const userCount = await User.countDocuments();
-    const assignedRole = (userCount === 0) ? "Admin" : "Viewer";
+    const assignedRole = userCount === 0 ? "Admin" : "Viewer";
 
     const hashedPassword = await generateHashPassword(password);
 
@@ -37,7 +36,7 @@ exports.signup = async (req, res) => {
       email,
       password: hashedPassword,
       role: assignedRole,
-      status: "Active" // Default status
+      status: "Active",
     });
 
     let result = await user.save();
@@ -46,14 +45,13 @@ exports.signup = async (req, res) => {
 
     res.status(201).send({
       message: `Account created as ${assignedRole}`,
-      user: result
+      user: result,
     });
   } catch (error) {
     res.status(500).send({ message: "Internal Server Error." });
   }
 };
 
-// --- LOGIN (With Status Check) ---
 exports.login = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -68,10 +66,9 @@ exports.login = async (req, res) => {
       return res.status(404).json({ message: "Invalid email" });
     }
 
-    // ✅ CHECK: Inactive user login nahi kar sakta
     if (user.status === "Inactive") {
       return res.status(403).json({
-        message: "Your account is Inactive. Please contact Admin."
+        message: "Your account is Inactive. Please contact Admin.",
       });
     }
 
@@ -86,20 +83,19 @@ exports.login = async (req, res) => {
     const token = generateToken(
       { _id: userResponse._id, role: userResponse.role },
       process.env.SECRET_KEY,
-      process.env.JWT_EXPIRATION
+      process.env.JWT_EXPIRATION,
     );
 
     return res.status(200).send({
       message: "Login successful",
       user: userResponse,
-      token
+      token,
     });
   } catch (error) {
     res.status(500).json({ message: "Internal Server Error." });
   }
 };
 
-// --- FORGOT PASSWORD ---
 exports.forgotPassword = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -116,7 +112,7 @@ exports.forgotPassword = async (req, res) => {
     const tokenEmail = generateToken(
       { email },
       process.env.SECRET_KEY,
-      process.env.JWT_EXPIRATION_EMAIL
+      process.env.JWT_EXPIRATION_EMAIL,
     );
 
     const transporter = nodemailer.createTransport({
@@ -128,7 +124,10 @@ exports.forgotPassword = async (req, res) => {
       },
     });
 
-    const html = ForgetPasswordEmail.email(process.env.FRONTEND_URL, tokenEmail);
+    const html = ForgetPasswordEmail.email(
+      process.env.FRONTEND_URL,
+      tokenEmail,
+    );
     const emailOptions = {
       from: process.env.OWNER_EMAIL,
       to: email,
@@ -143,7 +142,6 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-// --- RESET PASSWORD ---
 exports.resetPassword = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -169,31 +167,26 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
-// --- GET ALL USERS ---
-// userController.js
 exports.getAllUsers = async (req, res) => {
   try {
     const currentUserRole = req.user.role;
 
-    // 1. Check if Admin: Return full data
     if (currentUserRole === "Admin") {
-      const users = await User.find().select("-password").sort({ createdAt: -1 });
+      const users = await User.find()
+        .select("-password")
+        .sort({ createdAt: -1 });
       return res.status(200).json(users);
     }
 
-    // 2. If Editor/Viewer: Return only status of active users (for Dashboard count)
-    // Isse 403 nahi jayega, isliye Logout nahi hoga
-    const activeUsersData = await User.find({ status: "Active" }).select("status");
+    const activeUsersData = await User.find({ status: "Active" }).select(
+      "status",
+    );
     return res.status(200).json(activeUsersData);
-
   } catch (error) {
     res.status(500).json({ message: "Error fetching users" });
   }
 };
 
-// --- UPDATE USER (Role & Status) ---
-// Note: Iska naam 'updateUser' rakha hai taake userRoutes.js se match kare
-// userController.js
 exports.updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
@@ -202,46 +195,49 @@ exports.updateUserRole = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { role, status },
-      { new: true }
+      { new: true },
     ).select("-password");
 
-    if (!updatedUser) return res.status(404).json({ message: "User not found" });
+    if (!updatedUser)
+      return res.status(404).json({ message: "User not found" });
 
-    // We return the updatedUser object here
     res.status(200).json({
       message: "Updated successfully!",
-      user: updatedUser
+      user: updatedUser,
     });
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }
 };
 
-// --- ADMIN RESET PASSWORD ---
 exports.adminResetPassword = async (req, res) => {
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
 
     if (!newPassword || newPassword.length < 4) {
-      return res.status(400).json({ message: "Password must be at least 4 characters." });
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 4 characters." });
     }
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Password ko hash karke save karein
     user.password = await generateHashPassword(newPassword);
     await user.save();
 
-    return res.status(200).json({ message: `Password for ${user.firstName} updated successfully!` });
+    return res
+      .status(200)
+      .json({
+        message: `Password for ${user.firstName} updated successfully!`,
+      });
   } catch (error) {
     console.error("Admin Reset Error:", error);
     return res.status(500).json({ message: "Server Error" });
   }
 };
 
-// --- VALIDATIONS ---
 exports.validate = (method) => {
   switch (method) {
     case "signup": {
@@ -262,7 +258,11 @@ exports.validate = (method) => {
       return [check("email").isEmail().withMessage("Valid email is required")];
     }
     case "resetPassword": {
-      return [check("newPassword").isLength({ min: 4 }).withMessage("Min 4 characters")];
+      return [
+        check("newPassword")
+          .isLength({ min: 4 })
+          .withMessage("Min 4 characters"),
+      ];
     }
   }
 };

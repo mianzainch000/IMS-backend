@@ -1,146 +1,156 @@
 const Product = require("../models/productSchema");
 
-// 1. GET ALL PRODUCTS (Only for the logged-in user)
 exports.getProducts = async (req, res) => {
-    try {
-        const products = await Product.find({ userId: req.user.id }).sort({ createdAt: -1 });
-        res.status(200).json(products);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+  try {
+    const products = await Product.find({ userId: req.user.id }).sort({
+      createdAt: -1,
+    });
+    res.status(200).json(products);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
-// ADD PRODUCT
 exports.addProduct = async (req, res) => {
-    try {
-        const { name, sku, category, price, stock } = req.body;
+  try {
+    const { name, sku, category, price, stock } = req.body;
 
-        // 1. Manual Check: Kya is user ne pehle ye SKU use kiya hai?
-        const existingProduct = await Product.findOne({
-            sku: sku,
-            userId: req.user.id
-        });
+    const existingProduct = await Product.findOne({
+      sku: sku,
+      userId: req.user.id,
+    });
 
-        if (existingProduct) {
-            return res.status(400).json({
-                success: false,
-                message: `Opps! SKU "${sku}" pehle se maujood hai. Kuch aur try karein.`
-            });
-        }
-
-        // 2. Agar duplicate nahi hai, toh save karein
-        const newProduct = new Product({
-            name, sku, category, price, stock,
-            userId: req.user.id
-        });
-
-        await newProduct.save();
-
-        res.status(201).json({
-            success: true,
-            message: "Product added successfully!",
-            data: newProduct
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+    if (existingProduct) {
+      return res.status(400).json({
+        success: false,
+        message: `Opps! SKU "${sku}" pehle se maujood hai. Kuch aur try karein.`,
+      });
     }
+
+    const newProduct = new Product({
+      name,
+      sku,
+      category,
+      price,
+      stock,
+      userId: req.user.id,
+    });
+
+    await newProduct.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully!",
+      data: newProduct,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-// UPDATE PRODUCT
 exports.updateProduct = async (req, res) => {
-    try {
-        const { sku } = req.body;
+  try {
+    const { sku } = req.body;
 
-        // 1. Manual Check for Update: 
-        // Check karein ke naya SKU kisi aur product ka toh nahi (current product ko chor kar)
-        const duplicateSku = await Product.findOne({
-            sku: sku,
-            userId: req.user.id,
-            _id: { $ne: req.params.id } // $ne means "Not Equal" to current product ID
-        });
+    const duplicateSku = await Product.findOne({
+      sku: sku,
+      userId: req.user.id,
+      _id: { $ne: req.params.id },
+    });
 
-        if (duplicateSku) {
-            return res.status(400).json({
-                success: false,
-                message: `Yeh SKU (${sku}) kisi aur product ko diya ja chuka hai.`
-            });
-        }
-
-        const product = await Product.findOneAndUpdate(
-            { _id: req.params.id, userId: req.user.id },
-            req.body,
-            { new: true }
-        );
-
-        if (!product) return res.status(404).json({ success: false, message: "Product not found" });
-
-        res.status(200).json({
-            success: true,
-            message: "Product updated successfully!",
-            data: product
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+    if (duplicateSku) {
+      return res.status(400).json({
+        success: false,
+        message: `Yeh SKU (${sku}) kisi aur product ko diya ja chuka hai.`,
+      });
     }
+
+    const product = await Product.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.id },
+      req.body,
+      { new: true },
+    );
+
+    if (!product)
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+
+    res.status(200).json({
+      success: true,
+      message: "Product updated successfully!",
+      data: product,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-// 4. DELETE PRODUCT
 exports.deleteProduct = async (req, res) => {
-    try {
-        const product = await Product.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
-        if (!product) return res.status(404).json({ message: "Product not found or unauthorized" });
-        res.status(200).json({ message: "Product deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+  try {
+    const product = await Product.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.id,
+    });
+    if (!product)
+      return res
+        .status(404)
+        .json({ message: "Product not found or unauthorized" });
+    res.status(200).json({ message: "Product deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
-// POS SCANNER: SKU se product dhoondna
 exports.getProductBySku = async (req, res) => {
-    try {
-        const { sku } = req.params;
-        // Hum userId bhi check karenge taake ek user ka scanner dusre ka product na uthaye
-        const product = await Product.findOne({ sku: sku, userId: req.user.id });
+  try {
+    const { sku } = req.params;
 
-        if (!product) {
-            return res.status(404).json({ success: false, message: "Product not found!" });
-        }
+    const product = await Product.findOne({ sku: sku, userId: req.user.id });
 
-        if (product.stock <= 0) {
-            return res.status(400).json({ success: false, message: "Out of stock!" });
-        }
-
-        res.status(200).json({ success: true, data: product });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found!" });
     }
+
+    if (product.stock <= 0) {
+      return res.status(400).json({ success: false, message: "Out of stock!" });
+    }
+
+    res.status(200).json({ success: true, data: product });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-// CHECKOUT: Stock minus karna
 exports.processSale = async (req, res) => {
-    try {
-        const { items } = req.body; // Array of { _id, quantity }
+  try {
+    const { items } = req.body;
 
-        // Loop chalakar har product ka stock update karna
-        for (let item of items) {
-            const product = await Product.findOne({ _id: item._id, userId: req.user.id });
+    for (let item of items) {
+      const product = await Product.findOne({
+        _id: item._id,
+        userId: req.user.id,
+      });
 
-            if (product.stock < item.quantity) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Stock kam hai: ${product.name} (Available: ${product.stock})`
-                });
-            }
+      if (product.stock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Stock kam hai: ${product.name} (Available: ${product.stock})`,
+        });
+      }
 
-            // Database mein stock update ($inc with negative value)
-            await Product.findOneAndUpdate(
-                { _id: item._id, userId: req.user.id },
-                { $inc: { stock: -item.quantity } }
-            );
-        }
-
-        res.status(200).json({ success: true, message: "Sale successful! Stock updated." });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+      await Product.findOneAndUpdate(
+        { _id: item._id, userId: req.user.id },
+        { $inc: { stock: -item.quantity } },
+      );
     }
+
+    res
+      .status(200)
+      .json({ success: true, message: "Sale successful! Stock updated." });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };

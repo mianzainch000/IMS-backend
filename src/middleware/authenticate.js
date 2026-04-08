@@ -11,7 +11,7 @@ const authenticate = (req, res, next) => {
   try {
     const decoded = verifyToken(token, process.env.SECRET_KEY);
     req.user = decoded;
-    // we can write any name req.user
+
     next();
   } catch (err) {
     return res.status(400).send({ message: err.message });
