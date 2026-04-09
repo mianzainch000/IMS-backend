@@ -6,12 +6,14 @@ const saleSchema = new mongoose.Schema({
         productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
         name: String,
         quantity: Number,
-        priceSold: Number, // Jis qeemat par becha
-        costPrice: Number, // Jis qeemat par khareeda tha
-        profit: Number     // (priceSold - costPrice) * quantity
+        priceSold: Number,
+        costPrice: Number,
+        discount: Number, // Individual item ka discount
+        profit: Number
     }],
     totalAmount: { type: Number, required: true },
     totalProfit: { type: Number, required: true },
+    totalDiscount: { type: Number, default: 0 }, // Total sale ka discount
     createdAt: { type: Date, default: Date.now }
 });
 

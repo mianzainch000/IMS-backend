@@ -127,9 +127,11 @@ exports.getProductBySku = async (req, res) => {
 // 6. Process Sale (Checkout) - RECORDING PROFIT/LOSS
 exports.processSale = async (req, res) => {
   try {
-    const { items } = req.body; // Frontend se aane wale products
+    const { items } = req.body;
+
     let totalSaleAmount = 0;
     let totalSaleProfit = 0;
+    let totalDiscount = 0; // Discount calculate karne ke liye
     let saleItems = [];
 
     for (let item of items) {
@@ -147,41 +149,50 @@ exports.processSale = async (req, res) => {
         });
       }
 
-      // Profit Calculation per item
-      const itemProfit = (product.price - product.costPrice) * item.quantity;
-      totalSaleAmount += (product.price * item.quantity);
+      const soldPrice = Number(item.price);
+      const quantity = Number(item.quantity);
+
+      // ✅ DISCOUNT LOGIC: (Original Price - Sold Price) * Quantity
+      const itemDiscount = (Number(product.price) - soldPrice) * quantity;
+
+      // ✅ PROFIT LOGIC: (Sold Price - Cost Price) * Quantity
+      const itemProfit = (soldPrice - Number(product.costPrice)) * quantity;
+
+      totalSaleAmount += soldPrice * quantity;
       totalSaleProfit += itemProfit;
+      totalDiscount += itemDiscount > 0 ? itemDiscount : 0; // Sirf positive discount count karein
 
       saleItems.push({
         productId: product._id,
         name: product.name,
-        quantity: item.quantity,
-        priceSold: product.price,
+        quantity: quantity,
+        priceSold: soldPrice,
         costPrice: product.costPrice,
-        profit: itemProfit
+        discount: itemDiscount > 0 ? itemDiscount : 0, // Individual record
+        profit: itemProfit,
       });
 
-      // Stock update (Decrease)
+      // Stock decrease
       await Product.findOneAndUpdate(
         { _id: item._id, userId: req.user.id },
         { $inc: { stock: -item.quantity } }
       );
     }
 
-    // Save this transaction to the Sale collection
     const newSale = new Sale({
       userId: req.user.id,
       items: saleItems,
       totalAmount: totalSaleAmount,
-      totalProfit: totalSaleProfit
+      totalProfit: totalSaleProfit,
+      totalDiscount: totalDiscount, // DB mein save ho raha hai
     });
 
     await newSale.save();
 
     res.status(200).json({
       success: true,
-      message: "Sale completed! Profit & Stock updated.",
-      data: newSale
+      message: "Sale completed with discount tracking!",
+      data: newSale,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -192,57 +203,84 @@ exports.processSale = async (req, res) => {
 exports.getAnalytics = async (req, res) => {
   try {
     const { filter } = req.query;
-    let startDate = new Date(0);
-    const now = new Date();
 
-    if (filter === 'day') startDate = new Date(now.setHours(0, 0, 0, 0));
-    else if (filter === 'week') startDate = new Date(now.setDate(now.getDate() - 7));
-    else if (filter === 'year') startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+    const getPKTime = () => {
+      return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
+    };
+
+    let startDate = new Date(0);
+    const nowPK = getPKTime();
+
+    if (filter === "day") {
+      nowPK.setHours(0, 0, 0, 0);
+      startDate = nowPK;
+    } else if (filter === "week") {
+      nowPK.setDate(nowPK.getDate() - 7);
+      startDate = nowPK;
+    } else if (filter === "year") {
+      nowPK.setFullYear(nowPK.getFullYear() - 1);
+      startDate = nowPK;
+    }
 
     const sales = await Sale.find({
       userId: req.user.id,
-      createdAt: { $gte: startDate }
+      createdAt: { $gte: startDate },
     }).sort({ createdAt: -1 });
 
     const groupedSales = {};
 
-    sales.forEach(sale => {
-      const dateKey = new Date(sale.createdAt).toLocaleDateString('en-GB');
-      const productNames = sale.items.map(i => i.name).sort().join(", ");
-      const key = `${dateKey}-${productNames}`;
+    sales.forEach((sale) => {
+      const dateKey = new Date(sale.createdAt).toLocaleDateString("en-GB", {
+        timeZone: "Asia/Karachi",
+      });
+
+      const key = sale._id.toString();
 
       if (!groupedSales[key]) {
         groupedSales[key] = {
           _id: sale._id,
           createdAt: sale.createdAt,
-          productNames: productNames,
+          productNames: sale.items.map((i) => i.name).join(", "),
           totalAmount: 0,
           totalProfit: 0,
-          totalQty: 0 // Initialize Quantity
+          totalQty: 0,
+          totalDiscount: 0, // Naya field grouped data ke liye
+          date: dateKey,
         };
       }
 
       groupedSales[key].totalAmount += sale.totalAmount;
       groupedSales[key].totalProfit += sale.totalProfit;
+      groupedSales[key].totalDiscount += (sale.totalDiscount || 0); //
 
-      // Items ki quantity ko sum karna
-      sale.items.forEach(item => {
-        groupedSales[key].totalQty += (item.quantity || 1);
+      sale.items.forEach((item) => {
+        groupedSales[key].totalQty += item.quantity || 1;
       });
     });
 
     const finalSalesArray = Object.values(groupedSales);
 
-    // Global Stats
-    let stats = { totalSales: 0, totalProfit: 0, totalCost: 0, totalQty: 0, loss: 0 };
-    finalSalesArray.forEach(item => {
+    let stats = {
+      totalSales: 0,
+      totalProfit: 0,
+      totalCost: 0,
+      totalQty: 0,
+      totalDiscount: 0, // Global stats card ke liye
+      loss: 0,
+    };
+
+    finalSalesArray.forEach((item) => {
       stats.totalSales += item.totalAmount;
       stats.totalProfit += item.totalProfit;
       stats.totalQty += item.totalQty;
-      stats.totalCost += (item.totalAmount - item.totalProfit);
+      stats.totalDiscount += item.totalDiscount; //
+      stats.totalCost += item.totalAmount - item.totalProfit;
     });
 
-    res.status(200).json({ stats, recentSales: finalSalesArray });
+    res.status(200).json({
+      stats,
+      recentSales: finalSalesArray,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
