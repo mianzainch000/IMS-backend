@@ -192,17 +192,28 @@ exports.updateUserRole = async (req, res) => {
     const { id } = req.params;
     const { role, status } = req.body;
 
+    if (!role && !status) {
+      return res.status(400).json({ message: "No changes provided (Role or Status required)." });
+    }
+
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { role, status },
-      { new: true },
+      { new: true }
     ).select("-password");
 
-    if (!updatedUser)
+    if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    let changes = [];
+    if (role) changes.push(`Role to ${updatedUser.role}`);
+    if (status) changes.push(`Status to ${updatedUser.status}`);
+
+    const finalMessage = `${updatedUser.firstName} ${changes.join(" and ")} updated successfully! ✅`;
 
     res.status(200).json({
-      message: "Updated successfully!",
+      message: finalMessage,
       user: updatedUser,
     });
   } catch (error) {
