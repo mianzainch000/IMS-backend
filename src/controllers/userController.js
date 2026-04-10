@@ -227,11 +227,9 @@ exports.adminResetPassword = async (req, res) => {
     user.password = await generateHashPassword(newPassword);
     await user.save();
 
-    return res
-      .status(200)
-      .json({
-        message: `Password for ${user.firstName} updated successfully!`,
-      });
+    return res.status(200).json({
+      message: `Password for ${user.firstName} updated successfully!`,
+    });
   } catch (error) {
     console.error("Admin Reset Error:", error);
     return res.status(500).json({ message: "Server Error" });

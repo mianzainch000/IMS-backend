@@ -45,7 +45,7 @@ router.post(
 router.get(
   "/analytics",
   authenticate,
-  authorize(["Admin", "Editor"]), // 2. Access control
-  getAnalytics
+  authorize(["Admin", "Editor"]),
+  getAnalytics,
 );
 module.exports = router;

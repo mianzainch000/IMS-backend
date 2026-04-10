@@ -24,34 +24,56 @@ function sortImports(content) {
       continue;
     }
 
-    if (trimmed.startsWith("import") || isCollectingImport) {
-      currentImportBlock += line + "\n";
+    if (trimmed.startsWith("import ") || isCollectingImport) {
+      currentImportBlock += (currentImportBlock ? "\n" : "") + line;
 
-      if (trimmed.includes("{") && !trimmed.includes("}")) {
+      const hasOpeningBrace = trimmed.includes("{");
+      const hasClosingBrace = trimmed.includes("}");
+
+      if (hasOpeningBrace && !hasClosingBrace) {
         isCollectingImport = true;
-      }
-
-      if (
-        trimmed.includes("}") ||
-        (trimmed.endsWith(";") && !isCollectingImport) ||
-        trimmed === ""
-      ) {
-        if (isCollectingImport && !trimmed.includes("}")) {
-          continue;
-        }
-
-        imports.push(currentImportBlock.trimEnd());
-        currentImportBlock = "";
+      } else if (hasClosingBrace) {
         isCollectingImport = false;
       }
-    } else {
-      others.push(line);
+
+      if (!isCollectingImport) {
+        if (currentImportBlock.includes("import")) {
+          imports.push(currentImportBlock);
+          currentImportBlock = "";
+        } else {
+          others.push(currentImportBlock);
+          currentImportBlock = "";
+        }
+      }
+      continue;
     }
+
+    others.push(line);
   }
 
   imports.sort((a, b) => a.length - b.length);
 
-  return [...useClient, ...imports, ...others].join("\n");
+  let result = "";
+
+  if (useClient.length > 0) {
+    result += useClient.join("\n") + "\n";
+  }
+
+  if (imports.length > 0) {
+    result += imports.join("\n");
+  }
+
+  const codeContent = others.join("\n").trim();
+
+  if (codeContent) {
+    if (imports.length > 0 || useClient.length > 0) {
+      result += "\n\n" + codeContent;
+    } else {
+      result += codeContent;
+    }
+  }
+
+  return result + "\n";
 }
 
 function sortCssContent(content) {
@@ -69,20 +91,20 @@ function sortCssContent(content) {
 
   lines.forEach((line) => {
     const trimmed = line.trim();
-
     if (trimmed.endsWith("{")) {
       stack.push({ sortedResult: [line], lines: [] });
     } else if (trimmed === "}") {
       const finishedBlock = stack.pop();
-      flushBlock(finishedBlock);
-      finishedBlock.sortedResult.push(line);
-
-      if (stack.length > 0) {
-        stack[stack.length - 1].sortedResult.push(
-          ...finishedBlock.sortedResult,
-        );
-      } else {
-        sortedContent.push(...finishedBlock.sortedResult);
+      if (finishedBlock) {
+        flushBlock(finishedBlock);
+        finishedBlock.sortedResult.push(line);
+        if (stack.length > 0) {
+          stack[stack.length - 1].sortedResult.push(
+            ...finishedBlock.sortedResult,
+          );
+        } else {
+          sortedContent.push(...finishedBlock.sortedResult);
+        }
       }
     } else {
       if (stack.length > 0) {
@@ -109,27 +131,23 @@ function sortProject() {
   const cssFiles = glob.sync("src/**/*.module.css");
   cssFiles.forEach((file) => {
     const content = fs.readFileSync(file, "utf-8");
-    const finalContent = sortCssContent(content);
-    fs.writeFileSync(file, finalContent, "utf-8");
-    console.log(`✅ Sorted CSS in: ${file}`);
+    fs.writeFileSync(file, sortCssContent(content), "utf-8");
+    console.log(`✅ Sorted CSS: ${file}`);
   });
 
   const codeFiles = glob.sync("src/**/*.{js,jsx,ts,tsx}");
   codeFiles.forEach((file) => {
     const content = fs.readFileSync(file, "utf-8");
-    const finalContent = sortImports(content);
-    fs.writeFileSync(file, finalContent, "utf-8");
-    console.log(`✅ Sorted Imports in: ${file}`);
+    fs.writeFileSync(file, sortImports(content), "utf-8");
+    console.log(`✅ Sorted Imports: ${file}`);
   });
 
   try {
-    console.log("✨ Running Prettier for final touch...");
-    execSync("npx prettier --write .", { stdio: "inherit" });
-    console.log("🎉 All done! Project is clean and sorted.");
+    console.log("✨ Running Prettier...");
+    execSync("npx prettier --write . --log-level warn", { stdio: "inherit" });
+    console.log("🎉 Success!");
   } catch (err) {
-    console.error(
-      "⚠️ Prettier failed. Make sure it is installed (npm install --save-dev prettier)",
-    );
+    console.error("⚠️ Prettier failed.");
   }
 }
 

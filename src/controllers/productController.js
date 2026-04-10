@@ -1,7 +1,6 @@
 const Product = require("../models/productSchema");
-const Sale = require("../models/saleSchema"); // Sales tracking ke liye zaroori hai
+const Sale = require("../models/saleSchema");
 
-// 1. Get all products
 exports.getProducts = async (req, res) => {
   try {
     const products = await Product.find({ userId: req.user.id }).sort({
@@ -13,7 +12,6 @@ exports.getProducts = async (req, res) => {
   }
 };
 
-// 2. Add new product with Cost Price
 exports.addProduct = async (req, res) => {
   try {
     const { name, sku, category, price, costPrice, stock } = req.body;
@@ -34,8 +32,8 @@ exports.addProduct = async (req, res) => {
       name,
       sku,
       category,
-      price,      // Selling Price
-      costPrice,  // Purchase Price (Profit ke liye)
+      price,
+      costPrice,
       stock,
       userId: req.user.id,
     });
@@ -52,7 +50,6 @@ exports.addProduct = async (req, res) => {
   }
 };
 
-// 3. Update product
 exports.updateProduct = async (req, res) => {
   try {
     const { sku } = req.body;
@@ -73,11 +70,13 @@ exports.updateProduct = async (req, res) => {
     const product = await Product.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.id },
       req.body,
-      { new: true }
+      { new: true },
     );
 
     if (!product)
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
 
     res.status(200).json({
       success: true,
@@ -89,29 +88,28 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
-// 4. Delete product
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findOneAndDelete({
       _id: req.params.id,
       userId: req.user.id,
     });
-    if (!product)
-      return res.status(404).json({ message: "Product not found" });
+    if (!product) return res.status(404).json({ message: "Product not found" });
     res.status(200).json({ message: "Product deleted successfully" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// 5. Get Product by SKU (For Scanner)
 exports.getProductBySku = async (req, res) => {
   try {
     const { sku } = req.params;
     const product = await Product.findOne({ sku: sku, userId: req.user.id });
 
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found!" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found!" });
     }
 
     if (product.stock <= 0) {
@@ -124,14 +122,13 @@ exports.getProductBySku = async (req, res) => {
   }
 };
 
-// 6. Process Sale (Checkout) - RECORDING PROFIT/LOSS
 exports.processSale = async (req, res) => {
   try {
     const { items } = req.body;
 
     let totalSaleAmount = 0;
     let totalSaleProfit = 0;
-    let totalDiscount = 0; // Discount calculate karne ke liye
+    let totalDiscount = 0;
     let saleItems = [];
 
     for (let item of items) {
@@ -152,15 +149,13 @@ exports.processSale = async (req, res) => {
       const soldPrice = Number(item.price);
       const quantity = Number(item.quantity);
 
-      // ✅ DISCOUNT LOGIC: (Original Price - Sold Price) * Quantity
       const itemDiscount = (Number(product.price) - soldPrice) * quantity;
 
-      // ✅ PROFIT LOGIC: (Sold Price - Cost Price) * Quantity
       const itemProfit = (soldPrice - Number(product.costPrice)) * quantity;
 
       totalSaleAmount += soldPrice * quantity;
       totalSaleProfit += itemProfit;
-      totalDiscount += itemDiscount > 0 ? itemDiscount : 0; // Sirf positive discount count karein
+      totalDiscount += itemDiscount > 0 ? itemDiscount : 0;
 
       saleItems.push({
         productId: product._id,
@@ -168,14 +163,13 @@ exports.processSale = async (req, res) => {
         quantity: quantity,
         priceSold: soldPrice,
         costPrice: product.costPrice,
-        discount: itemDiscount > 0 ? itemDiscount : 0, // Individual record
+        discount: itemDiscount > 0 ? itemDiscount : 0,
         profit: itemProfit,
       });
 
-      // Stock decrease
       await Product.findOneAndUpdate(
         { _id: item._id, userId: req.user.id },
-        { $inc: { stock: -item.quantity } }
+        { $inc: { stock: -item.quantity } },
       );
     }
 
@@ -184,7 +178,7 @@ exports.processSale = async (req, res) => {
       items: saleItems,
       totalAmount: totalSaleAmount,
       totalProfit: totalSaleProfit,
-      totalDiscount: totalDiscount, // DB mein save ho raha hai
+      totalDiscount: totalDiscount,
     });
 
     await newSale.save();
@@ -199,13 +193,14 @@ exports.processSale = async (req, res) => {
   }
 };
 
-// Analytics for Profit/Loss
 exports.getAnalytics = async (req, res) => {
   try {
     const { filter } = req.query;
 
     const getPKTime = () => {
-      return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
+      return new Date(
+        new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }),
+      );
     };
 
     let startDate = new Date(0);
@@ -244,14 +239,14 @@ exports.getAnalytics = async (req, res) => {
           totalAmount: 0,
           totalProfit: 0,
           totalQty: 0,
-          totalDiscount: 0, // Naya field grouped data ke liye
+          totalDiscount: 0,
           date: dateKey,
         };
       }
 
       groupedSales[key].totalAmount += sale.totalAmount;
       groupedSales[key].totalProfit += sale.totalProfit;
-      groupedSales[key].totalDiscount += (sale.totalDiscount || 0); //
+      groupedSales[key].totalDiscount += sale.totalDiscount || 0;
 
       sale.items.forEach((item) => {
         groupedSales[key].totalQty += item.quantity || 1;
@@ -265,7 +260,7 @@ exports.getAnalytics = async (req, res) => {
       totalProfit: 0,
       totalCost: 0,
       totalQty: 0,
-      totalDiscount: 0, // Global stats card ke liye
+      totalDiscount: 0,
       loss: 0,
     };
 
@@ -273,7 +268,7 @@ exports.getAnalytics = async (req, res) => {
       stats.totalSales += item.totalAmount;
       stats.totalProfit += item.totalProfit;
       stats.totalQty += item.totalQty;
-      stats.totalDiscount += item.totalDiscount; //
+      stats.totalDiscount += item.totalDiscount;
       stats.totalCost += item.totalAmount - item.totalProfit;
     });
 
