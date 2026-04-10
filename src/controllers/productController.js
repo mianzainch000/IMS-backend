@@ -198,9 +198,7 @@ exports.getAnalytics = async (req, res) => {
     const { filter } = req.query;
 
     const getPKTime = () => {
-      return new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }),
-      );
+      return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
     };
 
     let startDate = new Date(0);
@@ -220,47 +218,48 @@ exports.getAnalytics = async (req, res) => {
     const sales = await Sale.find({
       userId: req.user.id,
       createdAt: { $gte: startDate },
-    }).sort({ createdAt: -1 });
+    });
 
-    const groupedSales = {};
+    const groupedByProduct = {};
 
     sales.forEach((sale) => {
       const dateKey = new Date(sale.createdAt).toLocaleDateString("en-GB", {
         timeZone: "Asia/Karachi",
       });
 
-      const key = sale._id.toString();
-
-      if (!groupedSales[key]) {
-        groupedSales[key] = {
-          _id: sale._id,
-          createdAt: sale.createdAt,
-          productNames: sale.items.map((i) => i.name).join(", "),
-          totalAmount: 0,
-          totalProfit: 0,
-          totalQty: 0,
-          totalDiscount: 0,
-          date: dateKey,
-        };
-      }
-
-      groupedSales[key].totalAmount += sale.totalAmount;
-      groupedSales[key].totalProfit += sale.totalProfit;
-      groupedSales[key].totalDiscount += sale.totalDiscount || 0;
-
       sale.items.forEach((item) => {
-        groupedSales[key].totalQty += item.quantity || 1;
+
+        const key = `${dateKey}_${item.name}`;
+
+        if (!groupedByProduct[key]) {
+          groupedByProduct[key] = {
+            date: dateKey,
+            productNames: item.name,
+            totalQty: 0,
+            totalAmount: 0,
+            totalProfit: 0,
+            totalDiscount: 0,
+            createdAt: sale.createdAt
+          };
+        }
+
+        groupedByProduct[key].totalQty += item.quantity;
+        groupedByProduct[key].totalAmount += (item.priceSold * item.quantity);
+        groupedByProduct[key].totalProfit += item.profit;
+        groupedByProduct[key].totalDiscount += item.discount;
       });
     });
 
-    const finalSalesArray = Object.values(groupedSales);
+    const finalSalesArray = Object.values(groupedByProduct).sort((a, b) =>
+      new Date(b.createdAt) - new Date(a.createdAt)
+    );
 
     let stats = {
       totalSales: 0,
       totalProfit: 0,
-      totalCost: 0,
       totalQty: 0,
       totalDiscount: 0,
+      totalCost: 0,
       loss: 0,
     };
 
@@ -269,7 +268,7 @@ exports.getAnalytics = async (req, res) => {
       stats.totalProfit += item.totalProfit;
       stats.totalQty += item.totalQty;
       stats.totalDiscount += item.totalDiscount;
-      stats.totalCost += item.totalAmount - item.totalProfit;
+      stats.totalCost += (item.totalAmount - item.totalProfit);
     });
 
     res.status(200).json({
