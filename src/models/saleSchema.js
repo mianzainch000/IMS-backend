@@ -17,6 +17,8 @@ const saleSchema = new mongoose.Schema({
   totalProfit: { type: Number, required: true },
   totalDiscount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
-});
+},
+  { timestamps: true },
+);
 
 module.exports = mongoose.model("Sale", saleSchema);

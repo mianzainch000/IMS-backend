@@ -197,22 +197,19 @@ exports.getAnalytics = async (req, res) => {
   try {
     const { filter } = req.query;
 
-    const getPKTime = () => {
-      return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-    };
-
     let startDate = new Date(0);
-    const nowPK = getPKTime();
 
-    if (filter === "day") {
-      nowPK.setHours(0, 0, 0, 0);
-      startDate = nowPK;
-    } else if (filter === "week") {
-      nowPK.setDate(nowPK.getDate() - 7);
-      startDate = nowPK;
-    } else if (filter === "year") {
-      nowPK.setFullYear(nowPK.getFullYear() - 1);
-      startDate = nowPK;
+    if (filter !== "all") {
+      const pkDateStr = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Karachi",
+      });
+      startDate = new Date(`${pkDateStr}T00:00:00+05:00`);
+
+      if (filter === "week") {
+        startDate.setDate(startDate.getDate() - 7);
+      } else if (filter === "year") {
+        startDate.setFullYear(startDate.getFullYear() - 1);
+      }
     }
 
     const sales = await Sale.find({
@@ -228,7 +225,6 @@ exports.getAnalytics = async (req, res) => {
       });
 
       sale.items.forEach((item) => {
-
         const key = `${dateKey}_${item.name}`;
 
         if (!groupedByProduct[key]) {
@@ -239,42 +235,32 @@ exports.getAnalytics = async (req, res) => {
             totalAmount: 0,
             totalProfit: 0,
             totalDiscount: 0,
-            createdAt: sale.createdAt
+            createdAt: sale.createdAt,
           };
         }
 
         groupedByProduct[key].totalQty += item.quantity;
-        groupedByProduct[key].totalAmount += (item.priceSold * item.quantity);
+        groupedByProduct[key].totalAmount += item.priceSold * item.quantity;
         groupedByProduct[key].totalProfit += item.profit;
         groupedByProduct[key].totalDiscount += item.discount;
       });
     });
 
-    const finalSalesArray = Object.values(groupedByProduct).sort((a, b) =>
-      new Date(b.createdAt) - new Date(a.createdAt)
+    const finalSalesArray = Object.values(groupedByProduct).sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     );
 
-    let stats = {
-      totalSales: 0,
-      totalProfit: 0,
-      totalQty: 0,
-      totalDiscount: 0,
-      totalCost: 0,
-      loss: 0,
-    };
+    const stats = { totalSales: 0, totalProfit: 0, totalQty: 0, totalDiscount: 0, totalCost: 0, loss: 0 };
 
     finalSalesArray.forEach((item) => {
       stats.totalSales += item.totalAmount;
       stats.totalProfit += item.totalProfit;
       stats.totalQty += item.totalQty;
       stats.totalDiscount += item.totalDiscount;
-      stats.totalCost += (item.totalAmount - item.totalProfit);
+      stats.totalCost += item.totalAmount - item.totalProfit;
     });
 
-    res.status(200).json({
-      stats,
-      recentSales: finalSalesArray,
-    });
+    res.status(200).json({ stats, recentSales: finalSalesArray });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
