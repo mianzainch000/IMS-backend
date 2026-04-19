@@ -9,15 +9,16 @@ const authorize = (roles = []) => {
         return res.status(401).json({ message: "User not found." });
       }
 
-
       if (user.status === "Inactive") {
-        return res.status(403).json({ logout: true, message: "Account Inactive" });
+        return res
+          .status(403)
+          .json({ logout: true, message: "Account Inactive" });
       }
 
       if (req.user.role !== user.role) {
         return res.status(403).json({
           logout: true,
-          message: "Role updated. Please login again."
+          message: "Role updated. Please login again.",
         });
       }
 
@@ -32,5 +33,4 @@ const authorize = (roles = []) => {
   };
 };
 
-// ⚠️ YAHAN CHECK KAREIN: Brackets ke bagair export karein
 module.exports = authorize;

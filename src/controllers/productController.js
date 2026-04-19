@@ -198,25 +198,23 @@ exports.getAnalytics = async (req, res) => {
     const { filter, year, month } = req.query;
     let query = { userId: req.user.id };
 
-    // Current Year and Month as fallback
     const currentYear = new Date().getFullYear();
     const targetYear = year ? parseInt(year) : currentYear;
 
     if (filter === "custom") {
       let start, end;
       if (month && month !== "all") {
-        // Specific Month in a Specific Year
         start = new Date(targetYear, parseInt(month) - 1, 1);
         end = new Date(targetYear, parseInt(month), 0, 23, 59, 59);
       } else {
-        // Whole Year
         start = new Date(targetYear, 0, 1);
         end = new Date(targetYear, 11, 31, 23, 59, 59);
       }
       query.createdAt = { $gte: start, $lte: end };
     } else if (filter !== "all") {
-      // Logic for 'day', 'week' remains similar
-      const pkDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+      const pkDateStr = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Karachi",
+      });
       let startDate = new Date(`${pkDateStr}T00:00:00+05:00`);
       if (filter === "week") startDate.setDate(startDate.getDate() - 7);
       query.createdAt = { $gte: startDate };
@@ -224,10 +222,11 @@ exports.getAnalytics = async (req, res) => {
 
     const sales = await Sale.find(query);
 
-    // Grouping logic (aapka existing logic use ho raha hai)
     const groupedByProduct = {};
     sales.forEach((sale) => {
-      const dateKey = new Date(sale.createdAt).toLocaleDateString("en-GB", { timeZone: "Asia/Karachi" });
+      const dateKey = new Date(sale.createdAt).toLocaleDateString("en-GB", {
+        timeZone: "Asia/Karachi",
+      });
       sale.items.forEach((item) => {
         const key = `${dateKey}_${item.name}`;
         if (!groupedByProduct[key]) {
@@ -248,15 +247,24 @@ exports.getAnalytics = async (req, res) => {
       });
     });
 
-    const finalSalesArray = Object.values(groupedByProduct).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const finalSalesArray = Object.values(groupedByProduct).sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    );
 
-    const stats = { totalSales: 0, totalProfit: 0, totalQty: 0, totalDiscount: 0, totalCost: 0, loss: 0 };
+    const stats = {
+      totalSales: 0,
+      totalProfit: 0,
+      totalQty: 0,
+      totalDiscount: 0,
+      totalCost: 0,
+      loss: 0,
+    };
     finalSalesArray.forEach((item) => {
       stats.totalSales += item.totalAmount;
       stats.totalProfit += item.totalProfit;
       stats.totalQty += item.totalQty;
       stats.totalDiscount += item.totalDiscount;
-      stats.totalCost += (item.totalAmount - item.totalProfit);
+      stats.totalCost += item.totalAmount - item.totalProfit;
     });
 
     res.status(200).json({ stats, recentSales: finalSalesArray });

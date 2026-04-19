@@ -193,13 +193,15 @@ exports.updateUserRole = async (req, res) => {
     const { role, status } = req.body;
 
     if (!role && !status) {
-      return res.status(400).json({ message: "No changes provided (Role or Status required)." });
+      return res
+        .status(400)
+        .json({ message: "No changes provided (Role or Status required)." });
     }
 
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { role, status },
-      { new: true }
+      { new: true },
     ).select("-password");
 
     if (!updatedUser) {
