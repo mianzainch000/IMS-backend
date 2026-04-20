@@ -192,10 +192,24 @@ exports.updateUserRole = async (req, res) => {
     const { id } = req.params;
     const { role, status } = req.body;
 
+    const targetUser = await User.findById(id);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const primaryAdmin = await User.findOne().sort({ createdAt: 1 });
+
+    if (primaryAdmin && primaryAdmin._id.toString() === id) {
+      if (role !== "Admin" || status !== "Active") {
+        return res.status(403).json({
+          message:
+            "The primary administrator's role and status are protected and cannot be modified.",
+        });
+      }
+    }
+
     if (!role && !status) {
-      return res
-        .status(400)
-        .json({ message: "No changes provided (Role or Status required)." });
+      return res.status(400).json({ message: "No changes provided." });
     }
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -203,10 +217,6 @@ exports.updateUserRole = async (req, res) => {
       { role, status },
       { new: true },
     ).select("-password");
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
 
     let changes = [];
     if (role) changes.push(`Role to ${updatedUser.role}`);
