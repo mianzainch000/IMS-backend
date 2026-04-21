@@ -195,7 +195,7 @@ exports.processSale = async (req, res) => {
 
 exports.getAnalytics = async (req, res) => {
   try {
-    const { filter, year, month } = req.query;
+    const { filter, year, month, search } = req.query;
     let query = { userId: req.user.id };
 
     const currentYear = new Date().getFullYear();
@@ -220,17 +220,80 @@ exports.getAnalytics = async (req, res) => {
       query.createdAt = { $gte: startDate };
     }
 
-    const sales = await Sale.find(query);
+    const sales = await Sale.find(query).sort({ createdAt: -1 });
+
+    const stats = {
+      totalSales: 0,
+      totalProfit: 0,
+      totalQty: 0,
+      totalDiscount: 0,
+      totalCost: 0,
+      loss: 0,
+    };
 
     const groupedByProduct = {};
+
     sales.forEach((sale) => {
       const dateKey = new Date(sale.createdAt).toLocaleDateString("en-GB", {
         timeZone: "Asia/Karachi",
       });
+
       sale.items.forEach((item) => {
+        if (search) {
+          const searchLower = search.toLowerCase().trim();
+          const matchesProduct = item.name.toLowerCase().includes(searchLower);
+
+          const dateParts = dateKey.split("/");
+          const day = dateParts[0];
+          const month = dateParts[1];
+          const yr = dateParts[2];
+
+          const monthNames = [
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+          ];
+          const monthName = monthNames[parseInt(month) - 1];
+
+          const matchesDate =
+            dateKey === searchLower ||
+            day === searchLower ||
+            month === searchLower ||
+            yr === searchLower ||
+            monthName === searchLower ||
+            searchLower === `${parseInt(day)} ${monthName}` ||
+            searchLower === `${monthName} ${parseInt(day)}` ||
+            searchLower === `${day}/${month}` ||
+            searchLower === `${parseInt(day)}/${parseInt(month)}` ||
+            searchLower === `${parseInt(day)} ${monthName} ${yr}` ||
+            searchLower === `${monthName} ${parseInt(day)} ${yr}` ||
+            searchLower === `${monthName} ${yr}`;
+
+          if (!matchesProduct && !matchesDate) {
+            return;
+          }
+        }
+
+        stats.totalSales += item.priceSold * item.quantity;
+        stats.totalProfit += item.profit;
+        stats.totalDiscount += item.discount;
+        stats.totalQty += item.quantity || 0;
+        stats.totalCost += item.costPrice * item.quantity;
+
         const key = `${dateKey}_${item.name}`;
+
         if (!groupedByProduct[key]) {
           groupedByProduct[key] = {
+            _id: sale._id,
             date: dateKey,
             productNames: item.name,
             totalQty: 0,
@@ -238,8 +301,16 @@ exports.getAnalytics = async (req, res) => {
             totalProfit: 0,
             totalDiscount: 0,
             createdAt: sale.createdAt,
+            items: [
+              {
+                _id: item._id,
+                productId: item.productId,
+                quantity: item.quantity,
+              },
+            ],
           };
         }
+
         groupedByProduct[key].totalQty += item.quantity;
         groupedByProduct[key].totalAmount += item.priceSold * item.quantity;
         groupedByProduct[key].totalProfit += item.profit;
@@ -251,23 +322,58 @@ exports.getAnalytics = async (req, res) => {
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
     );
 
-    const stats = {
-      totalSales: 0,
-      totalProfit: 0,
-      totalQty: 0,
-      totalDiscount: 0,
-      totalCost: 0,
-      loss: 0,
-    };
-    finalSalesArray.forEach((item) => {
-      stats.totalSales += item.totalAmount;
-      stats.totalProfit += item.totalProfit;
-      stats.totalQty += item.totalQty;
-      stats.totalDiscount += item.totalDiscount;
-      stats.totalCost += item.totalAmount - item.totalProfit;
+    res.status(200).json({
+      stats,
+      recentSales: finalSalesArray,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.returnSale = async (req, res) => {
+  try {
+    const { saleId, itemId, returnQuantity } = req.body;
+
+    const sale = await Sale.findOne({ _id: saleId, userId: req.user.id });
+    if (!sale) return res.status(404).json({ message: "Sale not found" });
+
+    const itemIndex = sale.items.findIndex((i) => i._id.toString() === itemId);
+    if (itemIndex === -1)
+      return res.status(404).json({ message: "Item not found in this sale" });
+
+    const item = sale.items[itemIndex];
+
+    if (returnQuantity > item.quantity) {
+      return res
+        .status(400)
+        .json({ message: "Return quantity exceeds sold quantity" });
+    }
+
+    const refundAmount = item.priceSold * returnQuantity;
+    const lostProfit = item.profit * (returnQuantity / item.quantity);
+
+    await Product.findByIdAndUpdate(item.productId, {
+      $inc: { stock: returnQuantity },
     });
 
-    res.status(200).json({ stats, recentSales: finalSalesArray });
+    if (item.quantity === returnQuantity) {
+      sale.items.splice(itemIndex, 1);
+    } else {
+      item.quantity -= returnQuantity;
+      item.profit -= lostProfit;
+      item.discount -=
+        (item.discount / (item.quantity + returnQuantity)) * returnQuantity;
+    }
+
+    sale.totalAmount -= refundAmount;
+    sale.totalProfit -= lostProfit;
+
+    await sale.save();
+
+    res
+      .status(201)
+      .json({ success: true, message: "Refund processed and stock updated!" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
